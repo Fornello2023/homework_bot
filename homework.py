@@ -42,8 +42,7 @@ logger.addHandler(console_handler)
 def check_tokens():
     """Проверка доступности всех необходимых переменных окружения."""
     if not PRACTICUM_TOKEN or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        logger.critical(
-            'Отсутствует обязательная переменная окружения.')
+        logger.critical('Отсутствует обязательная переменная окружения.')
         raise ValueError('Отсутствует обязательная переменная окружения.')
 
 
@@ -59,12 +58,16 @@ def send_message(bot, message):
 def get_api_answer(timestamp):
     """Отправка запроса к API и обработка ответа."""
     try:
-        response = requests.get(ENDPOINT, headers=HEADERS, params={
-                                'from_date': timestamp})
+        response = requests.get(
+            ENDPOINT,
+            headers=HEADERS,
+            params={'from_date': timestamp}
+        )
 
         if response.status_code != 200:
             raise HomeworkAPIResponseError(
-                f'Ошибка при запросе к API.Статус код: {response.status_code}')
+                f'Ошибка при запросе к API. Статус код: {response.status_code}'
+            )
 
         return response.json()
 
@@ -72,9 +75,10 @@ def get_api_answer(timestamp):
         logger.error(
             f'Ошибка HTTP при запросе к API: {http_err}.'
             f' Эндпоинт {ENDPOINT} недоступен.'
-            )
+        )
         raise HomeworkAPIResponseError(
-            f'Ошибка при запросе к API: {http_err}') from http_err
+            f'Ошибка при запросе к API: {http_err}'
+        ) from http_err
 
     except requests.exceptions.RequestException as err:
         logger.error(
@@ -111,7 +115,8 @@ def parse_status(homework):
         logger.error(
             'В данных о домашней работе отсутствуют обязательные поля.')
         raise HomeworkNotFoundError(
-            'В данных о домашней работе отсутствуют обязательные поля.')
+            'В данных о домашней работе отсутствуют обязательные поля.'
+        )
 
     verdict = HOMEWORK_VERDICTS.get(status)
 
