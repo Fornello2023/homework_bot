@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+from http import HTTPStatus
 
 import requests
 import telebot
@@ -41,9 +42,25 @@ logger.addHandler(console_handler)
 
 def check_tokens():
     """Проверка доступности всех необходимых переменных окружения."""
-    if not PRACTICUM_TOKEN or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        logger.critical('Отсутствует обязательная переменная окружения.')
-        raise ValueError('Отсутствует обязательная переменная окружения.')
+    missing_tokens = []
+
+    if not PRACTICUM_TOKEN:
+        missing_tokens.append('PRACTICUM_TOKEN')
+    if not TELEGRAM_TOKEN:
+        missing_tokens.append('TELEGRAM_TOKEN')
+    if not TELEGRAM_CHAT_ID:
+        missing_tokens.append('TELEGRAM_CHAT_ID')
+
+    if missing_tokens:
+        for token in missing_tokens:
+            logger.critical(
+                f'Отсутствует обязательная переменная окружения: {token}')
+        raise ValueError(
+            'Отсутствуют обязательные переменные окружения: '
+            f'{", ".join(missing_tokens)}'
+        )
+
+    logger.info('Все обязательные переменные окружения присутствуют.')
 
 
 def send_message(bot, message):
@@ -64,7 +81,7 @@ def get_api_answer(timestamp):
             params={'from_date': timestamp}
         )
 
-        if response.status_code != 200:
+        if response.status_code != HTTPStatus.OK:
             raise HomeworkAPIResponseError(
                 f'Ошибка при запросе к API. Статус код: {response.status_code}'
             )
@@ -72,35 +89,23 @@ def get_api_answer(timestamp):
         return response.json()
 
     except requests.exceptions.HTTPError as http_err:
-        logger.error(
-            f'Ошибка HTTP при запросе к API: {http_err}.'
-            f' Эндпоинт {ENDPOINT} недоступен.'
-        )
         raise HomeworkAPIResponseError(
             f'Ошибка при запросе к API: {http_err}'
         ) from http_err
 
     except requests.exceptions.RequestException as err:
-        logger.error(
-            f'Ошибка при запросе к API: {err}. '
-            f'Эндпоинт {ENDPOINT} недоступен.'
-        )
-
         raise HomeworkAPIError(f'Ошибка при запросе к API: {err}') from err
 
 
 def check_response(response):
     """Проверка формата ответа от API."""
     if not isinstance(response, dict):
-        logger.error('Ответ API не является словарем.')
         raise TypeError('Ответ API не является словарем.')
 
     if 'homeworks' not in response:
-        logger.error("Отсутствует ключ 'homeworks' в ответе API.")
         raise KeyError("Отсутствует ключ 'homeworks' в ответе API.")
 
     if not isinstance(response['homeworks'], list):
-        logger.error("Значение ключа 'homeworks' должно быть списком.")
         raise TypeError("Значение ключа 'homeworks' должно быть списком.")
 
     return response['homeworks']
@@ -108,21 +113,21 @@ def check_response(response):
 
 def parse_status(homework):
     """Извлечение статуса работы и подготовка сообщения для Telegram."""
-    homework_name = homework.get('homework_name')
-    status = homework.get('status')
-
-    if homework_name is None or status is None:
-        logger.error(
-            'В данных о домашней работе отсутствуют обязательные поля.')
+    if 'homework_name' not in homework:
         raise HomeworkNotFoundError(
-            'В данных о домашней работе отсутствуют обязательные поля.'
-        )
+            'Отсутствует ключ "homework_name" в данных о домашней работе.')
 
-    verdict = HOMEWORK_VERDICTS.get(status)
+    if 'status' not in homework:
+        raise HomeworkNotFoundError(
+            'Отсутствует ключ "status" в данных о домашней работе.')
 
-    if verdict is None:
-        logger.error(f'Неизвестный статус работы: {status}')
+    homework_name = homework['homework_name']
+    status = homework['status']
+
+    if status not in HOMEWORK_VERDICTS:
         raise HomeworkAPIResponseError(f'Неизвестный статус работы: {status}')
+
+    verdict = HOMEWORK_VERDICTS[status]
 
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -148,30 +153,13 @@ def main():
                 logger.debug('В ответе API нет новых статусов.')
 
             timestamp = int(time.time())
-            time.sleep(RETRY_PERIOD)
-
-        except HomeworkAPIError as error:
-            message = f'Ошибка API: {error.message}'
-            send_message(bot, message)
-            logger.error(f'Ошибка API: {error}')
-            time.sleep(RETRY_PERIOD)
-
-        except HomeworkNotFoundError as error:
-            message = f'Не найдены данные: {error.message}'
-            send_message(bot, message)
-            logger.error(f'Не найдены данные: {error}')
-            time.sleep(RETRY_PERIOD)
-
-        except HomeworkAPIResponseError as error:
-            message = f'Ошибка обработки ответа: {error.message}'
-            send_message(bot, message)
-            logger.error(f'Ошибка обработки ответа: {error}')
-            time.sleep(RETRY_PERIOD)
 
         except Exception as error:
-            message = f'Неизвестная ошибка: {error}'
+            message = f'Ошибка: {error}'
             send_message(bot, message)
-            logger.error(f'Неизвестная ошибка: {error}')
+            logger.error(f'Ошибка: {error}')
+
+        finally:
             time.sleep(RETRY_PERIOD)
 
 
